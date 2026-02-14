@@ -40,7 +40,7 @@ jobs:
           - os: macos-latest
             target: macos-x64
             extension: tar.gz
-          - os: windows-latest
+          - os: windows-2022
             target: windows-x64
             extension: zip
     runs-on: ${{ matrix.os }}
