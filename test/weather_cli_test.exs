@@ -31,7 +31,6 @@ defmodule WeatherCliTest do
     assert {:ok, result} = WeatherCli.run(["--city", "Berlin"], deps)
     assert result.city == "Berlin"
     assert_received {:puts, output}
-    assert output =~ "Current Weather"
     assert output =~ "Berlin"
   end
 

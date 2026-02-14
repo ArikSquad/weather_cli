@@ -3,27 +3,44 @@ defmodule WeatherCli.Formatter do
   Terminal renderer for weather output and errors.
   """
 
-  @card_width 56
-
   @spec weather(map()) :: String.t()
   def weather(data) do
-    title = "Current Weather · #{data.city}, #{data.country}"
-    accent = temp_color(data.temperature_c)
+    card_block(data)
+  end
+
+  @spec card_block(map()) :: String.t()
+  defp card_block(data) do
+    title = "#{data.city}, #{data.country}"
+    updated = now_utc()
+    icon = weather_icon(data.description)
+    desc = capitalize(data.description)
+    temp_c = data.temperature_c
+    temp_f = celsius_to_f(temp_c)
+    feels = data.feels_like_c
+    show_f = Map.get(data, :show_fahrenheit, false)
+    accent = temp_color(temp_c)
+
+    temp_label = accent.(format_num(temp_c) <> "°C")
+    f_part = if(show_f, do: "  (" <> format_num(temp_f) <> " °F)", else: "")
+    feels_part = "  (feels like " <> style(:bright, "#{format_num(feels)}°C") <> ")"
 
     [
-      top_border(accent),
-      row(accent, style(:bright, title)),
-      row(accent, ""),
-      row(
-        accent,
-        line("Condition", "#{weather_icon(data.description)} #{capitalize(data.description)}")
-      ),
-      row(accent, line("Temperature", "#{format_num(data.temperature_c)} °C")),
-      row(accent, line("Feels like", "#{format_num(data.feels_like_c)} °C")),
-      row(accent, line("Humidity", "#{format_num(data.humidity_percent)} %")),
-      row(accent, line("Pressure", "#{format_num(data.pressure_hpa)} hPa")),
-      row(accent, line("Wind speed", "#{format_num(data.wind_speed_ms)} m/s")),
-      bottom_border(accent)
+      style(:bright, title) <> "    " <> style(:cyan, "Updated #{updated}"),
+      "",
+      "    " <> accent.(icon <> "  " <> desc),
+      "",
+      "    " <> temp_label <> f_part <> feels_part,
+      "",
+      "    " <>
+        String.pad_trailing("Wind", 12) <>
+        "#{beaufort_label(data.wind_speed_ms)}, #{format_num(data.wind_speed_ms)} m/s",
+      "    " <> String.pad_trailing("Humidity", 12) <> "#{format_num(data.humidity_percent)}%",
+      "    " <> String.pad_trailing("Pressure", 12) <> "#{format_num(data.pressure_hpa)} hPa",
+      "    " <>
+        String.pad_trailing("Dew point", 12) <>
+        "#{format_num(estimate_dew_point(temp_c, data.humidity_percent))} °C",
+      "",
+      "    Comfort: " <> style(:yellow, comfort_score(data))
     ]
     |> Enum.join("\n")
   end
@@ -73,24 +90,6 @@ defmodule WeatherCli.Formatter do
     |> Enum.join("\n")
   end
 
-  @spec row((String.t() -> String.t()), String.t()) :: String.t()
-  defp row(accent, content) do
-    [accent.("│ "), content]
-    |> IO.iodata_to_binary()
-  end
-
-  @spec line(String.t(), String.t()) :: String.t()
-  defp line(label, value) do
-    [style(:yellow, String.pad_trailing(label <> ":", 12)), " ", style(:bright, value)]
-    |> IO.iodata_to_binary()
-  end
-
-  @spec top_border((String.t() -> String.t())) :: String.t()
-  defp top_border(accent), do: accent.("╭" <> String.duplicate("─", @card_width) <> "╮")
-
-  @spec bottom_border((String.t() -> String.t())) :: String.t()
-  defp bottom_border(accent), do: accent.("╰" <> String.duplicate("─", @card_width) <> "╯")
-
   @spec temp_color(number()) :: (String.t() -> String.t())
   defp temp_color(temp) when temp <= 10.0, do: &style(:blue, &1)
   defp temp_color(temp) when temp >= 28.0, do: &style(:red, &1)
@@ -120,6 +119,42 @@ defmodule WeatherCli.Formatter do
       String.contains?(normalized, "clear") -> "☀"
       true -> "🌤"
     end
+  end
+
+  @spec celsius_to_f(number()) :: float()
+  defp celsius_to_f(celsius), do: celsius * 9.0 / 5.0 + 32.0
+
+  @spec estimate_dew_point(number(), number()) :: float()
+  defp estimate_dew_point(temp_c, humidity_percent) do
+    temp_c - (100.0 - humidity_percent) / 5.0
+  end
+
+  @spec comfort_score(map()) :: String.t()
+  defp comfort_score(data) do
+    cond do
+      data.humidity_percent > 80 and data.temperature_c > 28 -> "Humid & hot"
+      data.humidity_percent > 75 -> "Sticky"
+      data.temperature_c < 5 -> "Cold"
+      data.temperature_c in 18..26 and data.humidity_percent in 35..65 -> "Comfortable"
+      true -> "Moderate"
+    end
+  end
+
+  @spec beaufort_label(number()) :: String.t()
+  defp beaufort_label(speed_ms) when speed_ms < 0.3, do: "Calm"
+  defp beaufort_label(speed_ms) when speed_ms < 1.6, do: "Light air"
+  defp beaufort_label(speed_ms) when speed_ms < 3.4, do: "Light breeze"
+  defp beaufort_label(speed_ms) when speed_ms < 5.5, do: "Gentle breeze"
+  defp beaufort_label(speed_ms) when speed_ms < 8.0, do: "Moderate breeze"
+  defp beaufort_label(speed_ms) when speed_ms < 10.8, do: "Fresh breeze"
+  defp beaufort_label(speed_ms) when speed_ms < 13.9, do: "Strong breeze"
+  defp beaufort_label(_speed_ms), do: "High wind"
+
+  @spec now_utc() :: String.t()
+  defp now_utc do
+    DateTime.utc_now()
+    |> DateTime.truncate(:second)
+    |> DateTime.to_iso8601()
   end
 
   @spec style(atom(), String.t()) :: String.t()

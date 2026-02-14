@@ -1,6 +1,6 @@
 # Weather CLI
 
-An Elixir command-line app that shows current weather with colorful, card-style terminal output.
+An Elixir command-line app that shows current weather with terminal output.
 
 ## Requirements
 
