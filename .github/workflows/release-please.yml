@@ -1,0 +1,85 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: .release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build-release-binaries:
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    needs: release-please
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            extension: tar.gz
+          - os: macos-latest
+            target: macos-x64
+            extension: tar.gz
+          - os: windows-latest
+            target: windows-x64
+            extension: zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Elixir + OTP
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.19.0"
+          otp-version: "27.2"
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Run tests
+        run: mix test
+
+      - name: Build escript
+        run: mix escript.build
+
+      - name: Package archive (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          chmod +x weather_cli
+          tar -czf dist/weather_cli-${{ matrix.target }}.tar.gz weather_cli
+
+      - name: Package archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $files = @('weather_cli', 'weather_cli.bat') | Where-Object { Test-Path $_ }
+          Compress-Archive -Path $files -DestinationPath dist/weather_cli-${{ matrix.target }}.zip -Force
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release-please.outputs.tag_name }}
+          files: dist/weather_cli-${{ matrix.target }}.${{ matrix.extension }}

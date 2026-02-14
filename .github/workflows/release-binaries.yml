@@ -1,0 +1,70 @@
+name: Build Release Binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to upload binaries to (for example: v0.1.1)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            extension: tar.gz
+          - os: macos-latest
+            target: macos-x64
+            extension: tar.gz
+          - os: windows-latest
+            target: windows-x64
+            extension: zip
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Elixir + OTP
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.19.0'
+          otp-version: '27.2'
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Run tests
+        run: mix test
+
+      - name: Build escript
+        run: mix escript.build
+
+      - name: Package archive (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          chmod +x weather_cli
+          tar -czf dist/weather_cli-${{ matrix.target }}.tar.gz weather_cli
+
+      - name: Package archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $files = @('weather_cli', 'weather_cli.bat') | Where-Object { Test-Path $_ }
+          Compress-Archive -Path $files -DestinationPath dist/weather_cli-${{ matrix.target }}.zip -Force
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: dist/weather_cli-${{ matrix.target }}.${{ matrix.extension }}
