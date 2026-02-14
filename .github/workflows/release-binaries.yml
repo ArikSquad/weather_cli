@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to upload binaries to (for example: v0.1.1)
+        description: The tag to release (e.g., v1.0.0)
         required: true
         type: string
 
@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Elixir + OTP
         uses: erlef/setup-beam@v1
